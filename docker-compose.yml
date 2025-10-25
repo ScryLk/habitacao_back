@@ -1,0 +1,133 @@
+version: '3.8'
+
+services:
+  # ============================================================
+  # BANCO DE DADOS MySQL
+  # ============================================================
+  db:
+    image: mysql:8.0
+    container_name: habitacao_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+      TZ: ${TZ:-America/Sao_Paulo}
+    ports:
+      - "${DB_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - habitacao_network
+
+  # ============================================================
+  # APLICAÇÃO DJANGO
+  # ============================================================
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: habitacao_web
+    restart: unless-stopped
+    command: gunicorn --bind 0.0.0.0:8000 --workers 3 --timeout 120 --access-logfile - --error-logfile - core.wsgi:application
+    env_file:
+      - .env
+    environment:
+      # Django
+      DJANGO_SETTINGS_MODULE: core.settings
+
+      # Database (override from .env for Docker network)
+      DB_HOST: db
+      DB_PORT: 3306
+
+      # Admin credentials
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    volumes:
+      - .:/app
+      - media_files:/app/media
+      - static_files:/app/staticfiles
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - habitacao_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/swagger/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================
+  # NGINX (Reverse Proxy)
+  # ============================================================
+  nginx:
+    image: nginx:alpine
+    container_name: habitacao_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - media_files:/app/media:ro
+      - static_files:/app/staticfiles:ro
+      - ./docker/nginx/logs:/var/log/nginx
+    depends_on:
+      - web
+    networks:
+      - habitacao_network
+
+  # ============================================================
+  # REDIS (Cache e Celery Broker) - Opcional
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: habitacao_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - habitacao_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+# ============================================================
+# VOLUMES
+# ============================================================
+volumes:
+  mysql_data:
+    driver: local
+  media_files:
+    driver: local
+  static_files:
+    driver: local
+  redis_data:
+    driver: local
+
+# ============================================================
+# NETWORKS
+# ============================================================
+networks:
+  habitacao_network:
+    driver: bridge

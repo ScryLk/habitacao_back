@@ -1,0 +1,1725 @@
+openapi: 3.0.3
+info:
+  title: Sistema Habitação - MCMV API
+  version: 1.0.0
+  description: |
+    API REST para gerenciamento do Programa Minha Casa Minha Vida - Entidades (MCMV).
+
+    ## Autenticação
+    A API utiliza JWT (JSON Web Tokens) para autenticação.
+
+    Para autenticar:
+    1. POST /api/v1/auth/login com email e password
+    2. Use o token retornado no header: `Authorization: Bearer <token>`
+
+    ## Papéis de Usuário
+    - **ADMIN**: Acesso total ao sistema
+    - **COORDINATOR**: Gerencia analistas e visualiza todos os municípios
+    - **ANALYST**: Analisa inscrições do seu município
+    - **CLERK**: Cadastra beneficiários e anexa documentos
+
+    ## Workflow de Inscrição
+    1. **DRAFT** → Rascunho inicial
+    2. **SUBMITTED** → Submetida para análise (gera protocolo)
+    3. **UNDER_REVIEW** → Em análise por analista
+    4. **CORRECTION_REQUESTED** → Correções solicitadas
+    5. **APPROVED** → Aprovada
+    6. **REJECTED** → Rejeitada
+
+  contact:
+    email: contato@habitacao.gov.br
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Servidor de Desenvolvimento
+  - url: https://api.habitacao.gov.br/api/v1
+    description: Servidor de Produção
+
+tags:
+  - name: Autenticação
+    description: Endpoints de autenticação e gerenciamento de tokens
+  - name: Beneficiários
+    description: CRUD de beneficiários
+  - name: Workflow
+    description: Transições de status e fluxo de trabalho
+  - name: Documentos
+    description: Upload e gerenciamento de documentos
+  - name: Dados Base
+    description: Municípios, critérios, tipos, etc
+  - name: Dashboard
+    description: Estatísticas e visão geral
+  - name: Público
+    description: Endpoints públicos (sem autenticação)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtido no endpoint de login
+
+  schemas:
+    # ============================================================
+    # RESPONSE WRAPPERS
+    # ============================================================
+    SuccessResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          description: Dados retornados
+        error:
+          type: 'null'
+          description: Sempre null em caso de sucesso
+        meta:
+          type: object
+          description: Metadados (paginação, etc)
+          properties:
+            page:
+              type: integer
+            per_page:
+              type: integer
+            total:
+              type: integer
+            total_pages:
+              type: integer
+
+    ErrorResponse:
+      type: object
+      properties:
+        data:
+          type: 'null'
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: Erro de validação
+            details:
+              type: object
+
+    # ============================================================
+    # AUTHENTICATION
+    # ============================================================
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@example.com
+        password:
+          type: string
+          format: password
+          example: senha123
+
+    LoginResponse:
+      type: object
+      properties:
+        access:
+          type: string
+          description: Access token JWT
+        refresh:
+          type: string
+          description: Refresh token JWT
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+            email:
+              type: string
+            full_name:
+              type: string
+            role:
+              type: string
+              enum: [ADMIN, COORDINATOR, ANALYST, CLERK]
+            municipality_id:
+              type: integer
+              nullable: true
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refresh
+      properties:
+        refresh:
+          type: string
+          description: Refresh token JWT
+
+    RegisterRequest:
+      type: object
+      required:
+        - full_name
+        - email
+        - password
+        - cpf
+        - role
+      properties:
+        full_name:
+          type: string
+          example: João Analista
+        email:
+          type: string
+          format: email
+          example: joao@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+        cpf:
+          type: string
+          pattern: '^\d{3}\.\d{3}\.\d{3}-\d{2}$'
+          example: 111.444.777-35
+        role:
+          type: string
+          enum: [ADMIN, COORDINATOR, ANALYST, CLERK]
+        municipality_id:
+          type: integer
+          nullable: true
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        full_name:
+          type: string
+        profile:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        cpf:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, COORDINATOR, ANALYST, CLERK]
+        role_display:
+          type: string
+        municipality:
+          type: integer
+          nullable: true
+        municipality_data:
+          $ref: '#/components/schemas/Municipality'
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ============================================================
+    # BASE MODELS
+    # ============================================================
+    Municipality:
+      type: object
+      properties:
+        id:
+          type: integer
+        ibge_code:
+          type: string
+          maxLength: 7
+        name:
+          type: string
+          maxLength: 120
+        uf:
+          type: string
+          maxLength: 2
+
+    PriorityCriteria:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        label:
+          type: string
+        group_tag:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+
+    SocialBenefitType:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        label:
+          type: string
+        active:
+          type: boolean
+
+    DocumentType:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        label:
+          type: string
+        required:
+          type: boolean
+        active:
+          type: boolean
+
+    # ============================================================
+    # BENEFICIARY
+    # ============================================================
+    BeneficiaryList:
+      type: object
+      properties:
+        id:
+          type: integer
+        protocol_number:
+          type: string
+          nullable: true
+        full_name:
+          type: string
+        cpf:
+          type: string
+        municipality:
+          type: integer
+          nullable: true
+        municipality_name:
+          type: string
+        uf:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, SUBMITTED, UNDER_REVIEW, CORRECTION_REQUESTED, APPROVED, REJECTED]
+        status_display:
+          type: string
+        age:
+          type: integer
+          nullable: true
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BeneficiaryCreate:
+      type: object
+      required:
+        - full_name
+        - cpf
+      properties:
+        full_name:
+          type: string
+          maxLength: 160
+        cpf:
+          type: string
+          pattern: '^\d{3}\.\d{3}\.\d{3}-\d{2}$'
+        rg:
+          type: string
+          maxLength: 32
+        birth_date:
+          type: string
+          format: date
+        marital_status:
+          type: string
+          enum: [SOLTEIRO, CASADO, UNIAO_ESTAVEL, VIUVO, DIVORCIADO, SEPARADO, OUTRO]
+        email:
+          type: string
+          format: email
+        phones:
+          type: object
+          properties:
+            primary:
+              type: string
+            secondary:
+              type: string
+        address:
+          type: object
+          properties:
+            line:
+              type: string
+            number:
+              type: string
+            complement:
+              type: string
+            neighborhood:
+              type: string
+            municipality_id:
+              type: integer
+            cep:
+              type: string
+            uf:
+              type: string
+        spouse:
+          type: object
+          nullable: true
+          properties:
+            name:
+              type: string
+            rg:
+              type: string
+            birth_date:
+              type: string
+              format: date
+        economy:
+          type: object
+          properties:
+            main_occupation:
+              type: string
+            gross_family_income:
+              type: number
+              format: decimal
+            has_cadunico:
+              type: boolean
+            nis_number:
+              type: string
+        family:
+          type: object
+          properties:
+            family_size:
+              type: integer
+              minimum: 1
+            has_elderly:
+              type: boolean
+            elderly_count:
+              type: integer
+            has_children:
+              type: boolean
+            children_count:
+              type: integer
+            has_disability_or_tea:
+              type: boolean
+            disability_or_tea_count:
+              type: integer
+            household_head_gender:
+              type: string
+              enum: [MASCULINO, FEMININO, OUTRO, NAO_INFORMADO]
+            cadunico_updated:
+              type: boolean
+        housing:
+          type: object
+          properties:
+            no_own_house:
+              type: boolean
+            precarious_own_house:
+              type: boolean
+            cohabitation:
+              type: boolean
+            improvised_dwelling:
+              type: boolean
+            pays_rent:
+              type: boolean
+            rent_value:
+              type: number
+              format: decimal
+            other_housing_desc:
+              type: string
+        notes:
+          type: string
+
+    BeneficiaryDetail:
+      allOf:
+        - $ref: '#/components/schemas/BeneficiaryList'
+        - type: object
+          properties:
+            rg:
+              type: string
+            birth_date:
+              type: string
+              format: date
+              nullable: true
+            marital_status:
+              type: string
+            email:
+              type: string
+            phone_primary:
+              type: string
+            phone_secondary:
+              type: string
+            address_line:
+              type: string
+            address_number:
+              type: string
+            address_complement:
+              type: string
+            neighborhood:
+              type: string
+            cep:
+              type: string
+            spouse_name:
+              type: string
+            spouse_rg:
+              type: string
+            spouse_birth_date:
+              type: string
+              format: date
+              nullable: true
+            main_occupation:
+              type: string
+            gross_family_income:
+              type: number
+              format: decimal
+            has_cadunico:
+              type: boolean
+            nis_number:
+              type: string
+            family_size:
+              type: integer
+            has_elderly:
+              type: boolean
+            elderly_count:
+              type: integer
+            has_children:
+              type: boolean
+            children_count:
+              type: integer
+            has_disability_or_tea:
+              type: boolean
+            disability_or_tea_count:
+              type: integer
+            household_head_gender:
+              type: string
+            family_in_cadunico_updated:
+              type: boolean
+            no_own_house:
+              type: boolean
+            precarious_own_house:
+              type: boolean
+            cohabitation:
+              type: boolean
+            improvised_dwelling:
+              type: boolean
+            pays_rent:
+              type: boolean
+            rent_value:
+              type: number
+              format: decimal
+            other_housing_desc:
+              type: string
+            notes:
+              type: string
+            priorities:
+              type: array
+              items:
+                $ref: '#/components/schemas/BeneficiaryPriority'
+            social_benefits:
+              type: array
+              items:
+                $ref: '#/components/schemas/BeneficiarySocialBenefit'
+            documents:
+              type: array
+              items:
+                $ref: '#/components/schemas/BeneficiaryDocument'
+            action_history:
+              type: array
+              items:
+                $ref: '#/components/schemas/ApplicationActionHistory'
+
+    BeneficiaryPriority:
+      type: object
+      properties:
+        id:
+          type: integer
+        criteria:
+          type: integer
+        criteria_data:
+          $ref: '#/components/schemas/PriorityCriteria'
+        created_at:
+          type: string
+          format: date-time
+
+    BeneficiarySocialBenefit:
+      type: object
+      properties:
+        id:
+          type: integer
+        benefit:
+          type: integer
+        benefit_data:
+          $ref: '#/components/schemas/SocialBenefitType'
+        other_text:
+          type: string
+
+    BeneficiaryDocument:
+      type: object
+      properties:
+        id:
+          type: integer
+        document_type:
+          type: integer
+        document_type_label:
+          type: string
+        file_name:
+          type: string
+        file_path:
+          type: string
+        file_url:
+          type: string
+          format: uri
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+        uploaded_at:
+          type: string
+          format: date-time
+        uploaded_by:
+          type: integer
+        uploaded_by_name:
+          type: string
+        validated:
+          type: boolean
+        validated_at:
+          type: string
+          format: date-time
+          nullable: true
+        validated_by:
+          type: integer
+          nullable: true
+        validated_by_name:
+          type: string
+        notes:
+          type: string
+
+    ApplicationActionHistory:
+      type: object
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+          enum: [SUBMIT, START_REVIEW, REQUEST_CORRECTION, APPROVE, REJECT, UPLOAD_DOC, VALIDATE_DOC, NOTE, EDIT]
+        action_display:
+          type: string
+        from_status:
+          type: string
+          nullable: true
+        from_status_display:
+          type: string
+        to_status:
+          type: string
+          nullable: true
+        to_status_display:
+          type: string
+        message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: integer
+        created_by_name:
+          type: string
+
+    WorkflowAction:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Mensagem/justificativa da ação
+
+    # ============================================================
+    # DASHBOARD
+    # ============================================================
+    DashboardOverview:
+      type: object
+      properties:
+        total:
+          type: integer
+        draft:
+          type: integer
+        submitted:
+          type: integer
+        under_review:
+          type: integer
+        correction_requested:
+          type: integer
+        approved:
+          type: integer
+        rejected:
+          type: integer
+        pending_docs:
+          type: integer
+        by_municipality:
+          type: array
+          items:
+            type: object
+            properties:
+              municipality__id:
+                type: integer
+              municipality__name:
+                type: string
+              municipality__uf:
+                type: string
+              count:
+                type: integer
+
+    # ============================================================
+    # PUBLIC
+    # ============================================================
+    PublicStatus:
+      type: object
+      properties:
+        protocol_number:
+          type: string
+        full_name:
+          type: string
+        status:
+          type: string
+        status_display:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+        municipality:
+          type: object
+          nullable: true
+          properties:
+            name:
+              type: string
+            uf:
+              type: string
+        cpf_masked:
+          type: string
+          example: "***.***.777-35"
+
+# ============================================================
+# PATHS
+# ============================================================
+paths:
+  # ============================================================
+  # AUTENTICAÇÃO
+  # ============================================================
+  /auth/login:
+    post:
+      tags:
+        - Autenticação
+      summary: Login
+      description: Autentica usuário e retorna tokens JWT
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login realizado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoginResponse'
+                  error:
+                    type: 'null'
+        '401':
+          description: Credenciais inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Autenticação
+      summary: Renovar Token
+      description: Renova o access token usando o refresh token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token renovado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      access:
+                        type: string
+                  error:
+                    type: 'null'
+        '401':
+          description: Token inválido ou expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/register:
+    post:
+      tags:
+        - Autenticação
+      summary: Registrar Usuário
+      description: Registra novo usuário servidor (apenas COORDINATOR e ADMIN)
+      operationId: register
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Usuário criado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+                  error:
+                    type: 'null'
+        '400':
+          description: Erro de validação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Sem permissão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /me:
+    get:
+      tags:
+        - Autenticação
+      summary: Usuário Logado
+      description: Retorna dados do usuário autenticado
+      operationId: getMe
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Dados do usuário
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+                  error:
+                    type: 'null'
+        '401':
+          description: Não autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================
+  # BENEFICIÁRIOS
+  # ============================================================
+  /beneficiaries/:
+    get:
+      tags:
+        - Beneficiários
+      summary: Listar Beneficiários
+      description: Lista beneficiários com filtros e paginação
+      operationId: listBeneficiaries
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 25
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, SUBMITTED, UNDER_REVIEW, CORRECTION_REQUESTED, APPROVED, REJECTED]
+        - name: municipality_id
+          in: query
+          schema:
+            type: integer
+        - name: uf
+          in: query
+          schema:
+            type: string
+        - name: cpf
+          in: query
+          schema:
+            type: string
+        - name: protocol
+          in: query
+          schema:
+            type: string
+        - name: has_cadunico
+          in: query
+          schema:
+            type: boolean
+        - name: has_elderly
+          in: query
+          schema:
+            type: boolean
+        - name: has_children
+          in: query
+          schema:
+            type: boolean
+        - name: has_disability_or_tea
+          in: query
+          schema:
+            type: boolean
+        - name: pays_rent
+          in: query
+          schema:
+            type: boolean
+        - name: no_own_house
+          in: query
+          schema:
+            type: boolean
+        - name: submitted_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: submitted_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: has_missing_docs
+          in: query
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: Busca por nome, CPF, protocolo ou email
+          schema:
+            type: string
+        - name: ordering
+          in: query
+          description: 'Ordenação: created_at, -created_at, submitted_at, -submitted_at, full_name, -full_name'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de beneficiários
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BeneficiaryList'
+                  error:
+                    type: 'null'
+                  meta:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      per_page:
+                        type: integer
+                      total:
+                        type: integer
+                      total_pages:
+                        type: integer
+
+    post:
+      tags:
+        - Beneficiários
+      summary: Criar Beneficiário
+      description: Cria novo beneficiário (status DRAFT)
+      operationId: createBeneficiary
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BeneficiaryCreate'
+      responses:
+        '201':
+          description: Beneficiário criado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDetail'
+                  error:
+                    type: 'null'
+        '400':
+          description: Erro de validação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /beneficiaries/{id}/:
+    get:
+      tags:
+        - Beneficiários
+      summary: Obter Beneficiário
+      description: Retorna detalhes completos de um beneficiário
+      operationId: getBeneficiary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Detalhes do beneficiário
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDetail'
+                  error:
+                    type: 'null'
+        '404':
+          description: Beneficiário não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      tags:
+        - Beneficiários
+      summary: Atualizar Beneficiário
+      description: Atualiza dados do beneficiário (parcial)
+      operationId: updateBeneficiary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Qualquer campo do beneficiário pode ser atualizado
+      responses:
+        '200':
+          description: Beneficiário atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDetail'
+                  error:
+                    type: 'null'
+
+    delete:
+      tags:
+        - Beneficiários
+      summary: Deletar Beneficiário
+      description: Remove beneficiário do sistema (apenas ADMIN)
+      operationId: deleteBeneficiary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Beneficiário removido
+        '403':
+          description: Sem permissão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================
+  # WORKFLOW
+  # ============================================================
+  /beneficiaries/{id}/submit/:
+    post:
+      tags:
+        - Workflow
+      summary: Submeter Inscrição
+      description: Submete inscrição (DRAFT → SUBMITTED). Gera protocolo automaticamente.
+      operationId: submitBeneficiary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Inscrição submetida
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDetail'
+                  error:
+                    type: 'null'
+        '400':
+          description: Erro de workflow (ex: documentos faltando)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /beneficiaries/{id}/start-review/:
+    post:
+      tags:
+        - Workflow
+      summary: Iniciar Análise
+      description: Inicia análise (SUBMITTED → UNDER_REVIEW). Cria atribuição ativa.
+      operationId: startReview
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Análise iniciada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDetail'
+                  error:
+                    type: 'null'
+
+  /beneficiaries/{id}/request-correction/:
+    post:
+      tags:
+        - Workflow
+      summary: Solicitar Correção
+      description: Solicita correções (UNDER_REVIEW → CORRECTION_REQUESTED)
+      operationId: requestCorrection
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowAction'
+      responses:
+        '200':
+          description: Correção solicitada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDetail'
+                  error:
+                    type: 'null'
+
+  /beneficiaries/{id}/approve/:
+    post:
+      tags:
+        - Workflow
+      summary: Aprovar Inscrição
+      description: Aprova inscrição (UNDER_REVIEW → APPROVED)
+      operationId: approveBeneficiary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowAction'
+      responses:
+        '200':
+          description: Inscrição aprovada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDetail'
+                  error:
+                    type: 'null'
+
+  /beneficiaries/{id}/reject/:
+    post:
+      tags:
+        - Workflow
+      summary: Rejeitar Inscrição
+      description: Rejeita inscrição (UNDER_REVIEW → REJECTED). Mensagem obrigatória.
+      operationId: rejectBeneficiary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowAction'
+              required:
+                - message
+      responses:
+        '200':
+          description: Inscrição rejeitada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDetail'
+                  error:
+                    type: 'null'
+
+  /beneficiaries/{id}/actions/:
+    get:
+      tags:
+        - Workflow
+      summary: Histórico de Ações
+      description: Lista histórico de ações do beneficiário
+      operationId: getBeneficiaryActions
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Histórico de ações
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApplicationActionHistory'
+                  error:
+                    type: 'null'
+
+  /beneficiaries/{id}/actions/note/:
+    post:
+      tags:
+        - Workflow
+      summary: Adicionar Nota
+      description: Adiciona observação interna
+      operationId: addNote
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowAction'
+              required:
+                - message
+      responses:
+        '200':
+          description: Nota adicionada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ApplicationActionHistory'
+                  error:
+                    type: 'null'
+
+  # ============================================================
+  # DOCUMENTOS
+  # ============================================================
+  /document-types/:
+    get:
+      tags:
+        - Documentos
+      summary: Listar Tipos de Documentos
+      description: Lista tipos de documentos disponíveis
+      operationId: listDocumentTypes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: required
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Lista de tipos de documentos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocumentType'
+                  error:
+                    type: 'null'
+
+  /documents/:
+    get:
+      tags:
+        - Documentos
+      summary: Listar Documentos
+      description: Lista documentos (filtrar por beneficiary_id)
+      operationId: listDocuments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: beneficiary_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de documentos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BeneficiaryDocument'
+                  error:
+                    type: 'null'
+
+    post:
+      tags:
+        - Documentos
+      summary: Upload de Documento
+      description: Faz upload de documento (multipart/form-data)
+      operationId: uploadDocument
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - beneficiary_id
+                - document_type_id
+                - file
+              properties:
+                beneficiary_id:
+                  type: integer
+                document_type_id:
+                  type: integer
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Documento enviado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDocument'
+                  error:
+                    type: 'null'
+
+  /documents/{id}/:
+    get:
+      tags:
+        - Documentos
+      summary: Obter Documento
+      description: Retorna detalhes do documento
+      operationId: getDocument
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Detalhes do documento
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDocument'
+                  error:
+                    type: 'null'
+
+  /documents/{id}/download/:
+    get:
+      tags:
+        - Documentos
+      summary: Baixar Documento
+      description: Faz download do arquivo
+      operationId: downloadDocument
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Arquivo do documento
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /documents/{id}/validate/:
+    patch:
+      tags:
+        - Documentos
+      summary: Validar Documento
+      description: Valida ou invalida documento (apenas ANALYST+)
+      operationId: validateDocument
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - validated
+              properties:
+                validated:
+                  type: boolean
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Documento validado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BeneficiaryDocument'
+                  error:
+                    type: 'null'
+
+  # ============================================================
+  # DADOS BASE
+  # ============================================================
+  /municipalities/:
+    get:
+      tags:
+        - Dados Base
+      summary: Listar Municípios
+      description: Lista municípios
+      operationId: listMunicipalities
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: uf
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de municípios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Municipality'
+                  error:
+                    type: 'null'
+
+  /priority-criteria/:
+    get:
+      tags:
+        - Dados Base
+      summary: Listar Critérios de Priorização
+      description: Lista critérios de priorização ativos
+      operationId: listPriorityCriteria
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de critérios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PriorityCriteria'
+                  error:
+                    type: 'null'
+
+  /social-benefits/:
+    get:
+      tags:
+        - Dados Base
+      summary: Listar Tipos de Benefícios Sociais
+      description: Lista tipos de benefícios sociais ativos
+      operationId: listSocialBenefits
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de benefícios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SocialBenefitType'
+                  error:
+                    type: 'null'
+
+  # ============================================================
+  # DASHBOARD
+  # ============================================================
+  /dashboard:
+    get:
+      tags:
+        - Dashboard
+      summary: Visão Geral
+      description: Retorna estatísticas gerais do sistema
+      operationId: dashboardOverview
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Estatísticas gerais
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DashboardOverview'
+                  error:
+                    type: 'null'
+
+  /dashboard/municipality:
+    get:
+      tags:
+        - Dashboard
+      summary: Estatísticas por Município
+      description: Retorna estatísticas de um município específico
+      operationId: municipalityStatistics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: municipality_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Estatísticas do município
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                  error:
+                    type: 'null'
+
+  /dashboard/my-assignments:
+    get:
+      tags:
+        - Dashboard
+      summary: Minhas Atribuições
+      description: Retorna atribuições do usuário logado
+      operationId: myAssignments
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Atribuições do usuário
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                  error:
+                    type: 'null'
+
+  # ============================================================
+  # PÚBLICO
+  # ============================================================
+  /public/status:
+    get:
+      tags:
+        - Público
+      summary: Consultar Status Público
+      description: Consulta status de inscrição por protocolo ou CPF (sem autenticação)
+      operationId: publicStatus
+      parameters:
+        - name: protocol
+          in: query
+          description: Número do protocolo
+          schema:
+            type: string
+        - name: cpf
+          in: query
+          description: CPF do beneficiário
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Status da inscrição
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PublicStatus'
+                  error:
+                    type: 'null'
+        '404':
+          description: Inscrição não encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

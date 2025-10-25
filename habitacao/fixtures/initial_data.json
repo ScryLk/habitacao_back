@@ -1,0 +1,199 @@
+[
+  {
+    "model": "habitacao.documenttype",
+    "pk": 1,
+    "fields": {
+      "code": "RG_CPF",
+      "label": "RG e CPF",
+      "required": true,
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.documenttype",
+    "pk": 2,
+    "fields": {
+      "code": "CERTIDAO",
+      "label": "Certidão de Nascimento/Casamento",
+      "required": true,
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.documenttype",
+    "pk": 3,
+    "fields": {
+      "code": "COMPROVANTE_RESIDENCIA",
+      "label": "Comprovante de Residência",
+      "required": true,
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.documenttype",
+    "pk": 4,
+    "fields": {
+      "code": "COMPROVANTE_RENDA",
+      "label": "Comprovante de Renda",
+      "required": true,
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.documenttype",
+    "pk": 5,
+    "fields": {
+      "code": "NIS_CADUNICO",
+      "label": "Comprovante NIS/CadÚnico",
+      "required": false,
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.socialbenefittype",
+    "pk": 1,
+    "fields": {
+      "code": "BOLSA_FAMILIA",
+      "label": "Bolsa Família",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.socialbenefittype",
+    "pk": 2,
+    "fields": {
+      "code": "BPC",
+      "label": "Benefício de Prestação Continuada (BPC)",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.socialbenefittype",
+    "pk": 3,
+    "fields": {
+      "code": "OUTROS",
+      "label": "Outros Benefícios",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 1,
+    "fields": {
+      "code": "WOMAN_HEAD",
+      "label": "Família chefiada por mulher",
+      "group_tag": "social",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 2,
+    "fields": {
+      "code": "ELDERLY",
+      "label": "Família com pessoa idosa",
+      "group_tag": "social",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 3,
+    "fields": {
+      "code": "PCD_TEA",
+      "label": "Família com pessoa com deficiência ou TEA",
+      "group_tag": "saude",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 4,
+    "fields": {
+      "code": "CHILDREN",
+      "label": "Família com crianças ou adolescentes",
+      "group_tag": "social",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 5,
+    "fields": {
+      "code": "CANCER_RARE_DISEASE",
+      "label": "Família com pessoa com câncer ou doença rara",
+      "group_tag": "saude",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 6,
+    "fields": {
+      "code": "DOMESTIC_VIOLENCE",
+      "label": "Vítima de violência doméstica",
+      "group_tag": "vulnerabilidade",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 7,
+    "fields": {
+      "code": "RISK_AREA",
+      "label": "Moradia em área de risco",
+      "group_tag": "vulnerabilidade",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 8,
+    "fields": {
+      "code": "SOCIAL_VULNERABILITY",
+      "label": "Situação de vulnerabilidade social extrema",
+      "group_tag": "vulnerabilidade",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 9,
+    "fields": {
+      "code": "CALAMITY_DISPLACED",
+      "label": "Desabrigado por calamidade pública",
+      "group_tag": "vulnerabilidade",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 10,
+    "fields": {
+      "code": "TRADITIONAL_QUILOMBOLA",
+      "label": "Família tradicional ou quilombola",
+      "group_tag": "social",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 11,
+    "fields": {
+      "code": "HOMELESS",
+      "label": "Em situação de rua",
+      "group_tag": "vulnerabilidade",
+      "active": true
+    }
+  },
+  {
+    "model": "habitacao.prioritycriteria",
+    "pk": 12,
+    "fields": {
+      "code": "RENT_OVER_30",
+      "label": "Aluguel compromete mais de 30% da renda",
+      "group_tag": "vulnerabilidade",
+      "active": true
+    }
+  }
+]
