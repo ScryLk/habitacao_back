@@ -27,7 +27,7 @@ class DocumentService:
 
     @staticmethod
     @transaction.atomic
-    def upload(beneficiary_id, file, document_type_id, user):
+    def upload(beneficiary_id, file, document_type_id, user=None):
         """
         Upload de documento
         """
@@ -54,18 +54,19 @@ class DocumentService:
             file_path=file,  # Django cuida do upload via FileField
             mime_type=mime_type,
             size_bytes=size_bytes,
-            uploaded_by=user
+            uploaded_by=user  # Pode ser None em uploads públicos
         )
 
-        # Registra ação
-        ApplicationActionHistory.objects.create(
-            beneficiary=beneficiary,
-            action=ActionType.UPLOAD_DOC,
-            from_status=beneficiary.status,
-            to_status=beneficiary.status,
-            message=f"Documento {document_type.label} anexado",
-            created_by=user
-        )
+        # Registra ação (apenas se houver usuário autenticado)
+        if user:
+            ApplicationActionHistory.objects.create(
+                beneficiary=beneficiary,
+                action=ActionType.UPLOAD_DOC,
+                from_status=beneficiary.status,
+                to_status=beneficiary.status,
+                message=f"Documento {document_type.label} anexado",
+                created_by=user
+            )
 
         return document
 

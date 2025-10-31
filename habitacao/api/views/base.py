@@ -2,7 +2,7 @@
 Views base (municípios, critérios, tipos, etc)
 """
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from habitacao.models import Municipality, PriorityCriteria, SocialBenefitType, DocumentType
 from habitacao.api.serializers import (
     MunicipalitySerializer,
@@ -14,10 +14,10 @@ from habitacao.api.utils.response import success_response
 
 
 class MunicipalityViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet para municípios (somente leitura)"""
+    """ViewSet para municípios (somente leitura) - Acesso público"""
     queryset = Municipality.objects.all().order_by('uf', 'name')
     serializer_class = MunicipalitySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]  # Permitir acesso público
     search_fields = ['name', 'ibge_code']
     filterset_fields = ['uf']
 

@@ -16,7 +16,15 @@ class AuthService:
         """
         Autentica usuário e retorna tokens JWT
         """
-        user = authenticate(username=email, password=password)
+        # Buscar usuário pelo email primeiro
+        try:
+            db_user = User.objects.get(email=email)
+            username = db_user.username
+        except User.DoesNotExist:
+            raise ValueError("Credenciais inválidas")
+
+        # Autenticar usando o username
+        user = authenticate(username=username, password=password)
 
         if not user:
             raise ValueError("Credenciais inválidas")
@@ -43,6 +51,7 @@ class AuthService:
                 'full_name': user.get_full_name(),
                 'role': user.profile.role,
                 'municipality_id': user.profile.municipality_id,
+                'is_superuser': user.is_superuser,  # <-- Adiciona campo
             }
         }
 

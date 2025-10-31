@@ -79,25 +79,59 @@ class BeneficiaryListSerializer(serializers.ModelSerializer):
     """Serializer resumido para listagem de beneficiários"""
     municipality_name = serializers.CharField(source='municipality.name', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    marital_status_display = serializers.CharField(source='get_marital_status_display', read_only=True)
     age = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Beneficiary
         fields = [
-            'id', 'protocol_number', 'full_name', 'cpf',
-            'municipality', 'municipality_name', 'uf',
-            'status', 'status_display', 'age',
-            'submitted_at', 'created_at', 'updated_at'
+            # === IDs e Protocolo ===
+            'id',
+            'protocol_number',
+            'status',
+            'status_display',
+
+            # === Dados Pessoais ===
+            'full_name',
+            'cpf',
+            'rg',
+            'birth_date',
+            'marital_status',
+            'marital_status_display',
+            'age',
+
+            # === Contatos ===
+            'phone_primary',
+            'email',
+
+            # === Localização ===
+            'municipality',
+            'municipality_name',
+            'uf',
+
+            # === Datas ===
+            'submitted_at',
+            'created_at',
+            'updated_at'
         ]
 
 
 class BeneficiaryDetailSerializer(serializers.ModelSerializer):
     """Serializer completo para detalhes do beneficiário"""
     municipality_data = MunicipalitySerializer(source='municipality', read_only=True)
+    municipality_name = serializers.SerializerMethodField()
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     marital_status_display = serializers.CharField(source='get_marital_status_display', read_only=True)
     household_head_gender_display = serializers.CharField(source='get_household_head_gender_display', read_only=True)
     age = serializers.IntegerField(read_only=True)
+
+    def get_municipality_name(self, obj):
+        """Retorna nome do município a partir da relação ou do campo de texto"""
+        if obj.municipality:
+            return obj.municipality.name
+        # Retorna o campo municipality_name se não estiver vazio
+        name = getattr(obj, 'municipality_name', None)
+        return name if name else None
 
     # Relacionamentos
     priorities = BeneficiaryPrioritySerializer(many=True, read_only=True)
@@ -111,7 +145,96 @@ class BeneficiaryDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Beneficiary
-        fields = '__all__'
+        fields = [
+            # === IDs e Protocolo ===
+            'id',
+            'protocol_number',
+            'status',
+            'status_display',
+
+            # === Dados Pessoais ===
+            'full_name',
+            'cpf',
+            'rg',
+            'birth_date',
+            'age',
+            'marital_status',
+            'marital_status_display',
+
+            # === Contatos ===
+            'phone_primary',
+            'phone_secondary',
+            'email',
+
+            # === Endereço ===
+            'address_line',
+            'address_number',
+            'address_complement',
+            'neighborhood',
+            'municipality',
+            'municipality_data',
+            'municipality_name',
+            'cep',
+            'uf',
+
+            # === Cônjuge ===
+            'spouse_name',
+            'spouse_rg',
+            'spouse_birth_date',
+
+            # === Econômico / CadÚnico ===
+            'main_occupation',
+            'gross_family_income',
+            'has_cadunico',
+            'nis_number',
+
+            # === Composição Familiar ===
+            'family_size',
+            'has_elderly',
+            'elderly_count',
+            'has_children',
+            'children_count',
+            'has_disability_or_tea',
+            'disability_or_tea_count',
+            'household_head_gender',
+            'household_head_gender_display',
+            'family_in_cadunico_updated',
+
+            # === Situação Habitacional ===
+            'no_own_house',
+            'precarious_own_house',
+            'cohabitation',
+            'improvised_dwelling',
+            'pays_rent',
+            'rent_value',
+            'other_housing_desc',
+
+            # === Documentação Apresentada (Booleans) ===
+            'has_rg_cpf',
+            'has_birth_certificate',
+            'has_address_proof',
+            'has_income_proof',
+            'has_cadunico_number',
+
+            # === Observações ===
+            'notes',
+
+            # === Relacionamentos ===
+            'priorities',
+            'social_benefits',
+            'documents',
+            'action_history',
+
+            # === Datas e Auditoria ===
+            'created_at',
+            'updated_at',
+            'submitted_at',
+            'submitted_by',
+            'submitted_by_name',
+            'last_review_at',
+            'last_reviewed_by',
+            'last_reviewed_by_name',
+        ]
         read_only_fields = [
             'protocol_number', 'created_at', 'updated_at',
             'submitted_at', 'submitted_by', 'last_review_at', 'last_reviewed_by'
@@ -119,7 +242,7 @@ class BeneficiaryDetailSerializer(serializers.ModelSerializer):
 
 
 class BeneficiaryCreateSerializer(serializers.Serializer):
-    """Serializer para criação de beneficiário com estrutura aninhada"""
+    """Serializer para criação de beneficiário (aceita dados aninhados OU flat)"""
 
     # Dados pessoais
     full_name = serializers.CharField(max_length=160)
@@ -128,24 +251,64 @@ class BeneficiaryCreateSerializer(serializers.Serializer):
     birth_date = serializers.DateField(required=False, allow_null=True)
     marital_status = serializers.CharField(max_length=20, required=False, allow_blank=True)
 
-    # Contatos (aninhado)
+    # Contatos (aninhado OU flat)
     phones = serializers.DictField(required=False, child=serializers.CharField(allow_blank=True))
+    phone_primary = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    phone_secondary = serializers.CharField(max_length=20, required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
 
-    # Endereço (aninhado)
+    # Endereço (aninhado OU flat)
     address = serializers.DictField(required=False)
+    address_line = serializers.CharField(max_length=160, required=False, allow_blank=True)
+    address_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    address_complement = serializers.CharField(max_length=60, required=False, allow_blank=True)
+    neighborhood = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    municipality_id = serializers.IntegerField(required=False, allow_null=True)
+    municipality_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    cep = serializers.CharField(max_length=9, required=False, allow_blank=True)
+    uf = serializers.CharField(max_length=2, required=False, allow_blank=True)
 
-    # Cônjuge (aninhado)
+    # Cônjuge (aninhado OU flat)
     spouse = serializers.DictField(required=False, allow_null=True)
+    spouse_name = serializers.CharField(max_length=160, required=False, allow_blank=True)
+    spouse_rg = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    spouse_birth_date = serializers.DateField(required=False, allow_null=True)
 
-    # Econômico (aninhado)
+    # Econômico (aninhado OU flat)
     economy = serializers.DictField(required=False)
+    main_occupation = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    gross_family_income = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
+    has_cadunico = serializers.BooleanField(required=False, default=False)
+    nis_number = serializers.CharField(max_length=20, required=False, allow_blank=True, allow_null=True)
 
-    # Família (aninhado)
+    # Família (aninhado OU flat)
     family = serializers.DictField(required=False)
+    family_size = serializers.IntegerField(required=False, default=1)
+    has_elderly = serializers.BooleanField(required=False, default=False)
+    elderly_count = serializers.IntegerField(required=False, default=0)
+    has_children = serializers.BooleanField(required=False, default=False)
+    children_count = serializers.IntegerField(required=False, default=0)
+    has_disability_or_tea = serializers.BooleanField(required=False, default=False)
+    disability_or_tea_count = serializers.IntegerField(required=False, default=0)
+    household_head_gender = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    family_in_cadunico_updated = serializers.BooleanField(required=False, default=False)
 
-    # Habitação (aninhado)
+    # Habitação (aninhado OU flat)
     housing = serializers.DictField(required=False)
+    no_own_house = serializers.BooleanField(required=False, default=False)
+    precarious_own_house = serializers.BooleanField(required=False, default=False)
+    cohabitation = serializers.BooleanField(required=False, default=False)
+    improvised_dwelling = serializers.BooleanField(required=False, default=False)
+    pays_rent = serializers.BooleanField(required=False, default=False)
+    rent_value = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
+    other_housing_desc = serializers.CharField(max_length=200, required=False, allow_blank=True)
+
+    # Documentação Apresentada (apenas flat)
+    has_rg_cpf = serializers.BooleanField(required=False, default=False)
+    has_birth_certificate = serializers.BooleanField(required=False, default=False)
+    has_address_proof = serializers.BooleanField(required=False, default=False)
+    has_income_proof = serializers.BooleanField(required=False, default=False)
+    has_cadunico_number = serializers.BooleanField(required=False, default=False)
 
     # Observações
     notes = serializers.CharField(required=False, allow_blank=True)
@@ -157,11 +320,19 @@ class BeneficiaryCreateSerializer(serializers.Serializer):
         return value
 
     def create(self, validated_data):
-        """Cria beneficiário a partir dos dados aninhados"""
+        """Cria beneficiário a partir dos dados aninhados OU flat"""
         from habitacao.api.services.beneficiary import BeneficiaryService
 
-        service = BeneficiaryService()
-        return service.create_from_nested_data(validated_data)
+        # Detecta se é estrutura aninhada ou flat
+        # Se tiver campos 'phones', 'address', 'economy', etc., é aninhada
+        is_nested = any(key in validated_data for key in ['phones', 'address', 'economy', 'family', 'housing'])
+
+        if is_nested:
+            # Usa o método original para dados aninhados
+            return BeneficiaryService.create_from_nested_data(validated_data)
+        else:
+            # Usa o novo método para dados flat
+            return BeneficiaryService.create_from_flat_data(validated_data)
 
 
 class BeneficiaryUpdateSerializer(serializers.ModelSerializer):
@@ -174,6 +345,15 @@ class BeneficiaryUpdateSerializer(serializers.ModelSerializer):
             'submitted_at', 'submitted_by',
             'last_review_at', 'last_reviewed_by'
         ]
+
+    def validate_nis_number(self, value):
+        """
+        Garante que NIS vazio seja convertido para None
+        Evita IntegrityError no banco de dados
+        """
+        if value is not None and isinstance(value, str) and value.strip() == '':
+            return None
+        return value
 
     def validate_status(self, value):
         """Impede mudança direta de status (usar endpoints de workflow)"""

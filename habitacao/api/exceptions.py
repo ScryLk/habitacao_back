@@ -25,7 +25,7 @@ def custom_exception_handler(exc, context):
     if response is not None:
         # Formata a resposta de erro
         error_response = {
-            "data": null,
+            "data": None,
             "error": {
                 "code": get_error_code(exc),
                 "message": get_error_message(exc, response.data),

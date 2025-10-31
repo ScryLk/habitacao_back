@@ -192,6 +192,12 @@ class Beneficiary(models.Model):
         blank=True,
         verbose_name='Município'
     )
+    municipality_name = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='Nome do Município (texto livre)',
+        help_text='Nome do município digitado manualmente ou via CEP'
+    )
     cep = models.CharField(
         max_length=9,
         blank=True,
@@ -286,6 +292,33 @@ class Beneficiary(models.Model):
     # Observações
     notes = models.TextField(blank=True, verbose_name='Observações')
 
+    # Documentação Apresentada
+    has_rg_cpf = models.BooleanField(
+        default=False,
+        verbose_name='Apresentou RG e CPF',
+        help_text='Documentos de identificação pessoal'
+    )
+    has_birth_certificate = models.BooleanField(
+        default=False,
+        verbose_name='Apresentou Certidão de Nascimento/Casamento',
+        help_text='Certidões de estado civil'
+    )
+    has_address_proof = models.BooleanField(
+        default=False,
+        verbose_name='Apresentou Comprovante de Residência',
+        help_text='Conta de luz, água, telefone, etc.'
+    )
+    has_income_proof = models.BooleanField(
+        default=False,
+        verbose_name='Apresentou Comprovante de Renda',
+        help_text='Holerite, declaração, etc. (quando houver)'
+    )
+    has_cadunico_number = models.BooleanField(
+        default=False,
+        verbose_name='Apresentou Número NIS / CadÚnico',
+        help_text='Comprovante do NIS ou inscrição no CadÚnico'
+    )
+
     # Auditoria
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='Submetido em')
     submitted_by = models.ForeignKey(
@@ -329,6 +362,11 @@ class Beneficiary(models.Model):
             self.protocol_number = self.generate_protocol_number()
             if not self.submitted_at:
                 self.submitted_at = timezone.now()
+
+        # Converter string vazia em NULL para respeitar unique constraint
+        # (permite múltiplos NULL mas não múltiplas strings vazias)
+        if self.nis_number == '':
+            self.nis_number = None
 
         super().save(*args, **kwargs)
 

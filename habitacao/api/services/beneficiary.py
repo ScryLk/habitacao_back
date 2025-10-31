@@ -11,11 +11,99 @@ class BeneficiaryService:
 
     @staticmethod
     @transaction.atomic
+    def create_from_flat_data(data):
+        """
+        Cria beneficiário a partir de dados flat (todos os campos no nível raiz)
+        Formato usado pelo front-end: { full_name, cpf, phone_primary, address_line, ... }
+        """
+        from habitacao.models import Municipality
+
+        # Se municipality_id for None ou 0, remove do dict
+        municipality_id = data.pop('municipality_id', None)
+        municipality = None
+        if municipality_id and municipality_id > 0:
+            try:
+                municipality = Municipality.objects.get(id=municipality_id)
+            except Municipality.DoesNotExist:
+                raise ValueError(f"Município com ID {municipality_id} não encontrado.")
+
+        # Cria beneficiário direto com campos flat
+        beneficiary = Beneficiary.objects.create(
+            # Dados pessoais
+            full_name=data.get('full_name'),
+            cpf=data.get('cpf'),
+            rg=data.get('rg', ''),
+            birth_date=data.get('birth_date'),
+            marital_status=data.get('marital_status', ''),
+
+            # Contatos
+            phone_primary=data.get('phone_primary', ''),
+            phone_secondary=data.get('phone_secondary', ''),
+            email=data.get('email', ''),
+
+            # Endereço
+            address_line=data.get('address_line', ''),
+            address_number=data.get('address_number', ''),
+            address_complement=data.get('address_complement', ''),
+            neighborhood=data.get('neighborhood', ''),
+            municipality=municipality,
+            cep=data.get('cep', ''),
+            uf=data.get('uf', ''),
+
+            # Cônjuge
+            spouse_name=data.get('spouse_name', ''),
+            spouse_rg=data.get('spouse_rg', ''),
+            spouse_birth_date=data.get('spouse_birth_date'),
+
+            # Econômico / CadÚnico
+            main_occupation=data.get('main_occupation', ''),
+            gross_family_income=data.get('gross_family_income'),
+            has_cadunico=data.get('has_cadunico', False),
+            nis_number=data.get('nis_number') or None,
+
+            # Composição Familiar
+            family_size=data.get('family_size', 1),
+            has_elderly=data.get('has_elderly', False),
+            elderly_count=data.get('elderly_count', 0),
+            has_children=data.get('has_children', False),
+            children_count=data.get('children_count', 0),
+            has_disability_or_tea=data.get('has_disability_or_tea', False),
+            disability_or_tea_count=data.get('disability_or_tea_count', 0),
+            household_head_gender=data.get('household_head_gender', ''),
+            family_in_cadunico_updated=data.get('family_in_cadunico_updated', False),
+
+            # Situação Habitacional
+            no_own_house=data.get('no_own_house', False),
+            precarious_own_house=data.get('precarious_own_house', False),
+            cohabitation=data.get('cohabitation', False),
+            improvised_dwelling=data.get('improvised_dwelling', False),
+            pays_rent=data.get('pays_rent', False),
+            rent_value=data.get('rent_value'),
+            other_housing_desc=data.get('other_housing_desc', ''),
+
+            # Documentação Apresentada
+            has_rg_cpf=data.get('has_rg_cpf', False),
+            has_birth_certificate=data.get('has_birth_certificate', False),
+            has_address_proof=data.get('has_address_proof', False),
+            has_income_proof=data.get('has_income_proof', False),
+            has_cadunico_number=data.get('has_cadunico_number', False),
+
+            # Observações
+            notes=data.get('notes', ''),
+            status=ApplicationStatus.DRAFT,
+        )
+
+        return beneficiary
+
+    @staticmethod
+    @transaction.atomic
     def create_from_nested_data(data):
         """
         Cria beneficiário a partir de dados aninhados
         Formato: { full_name, cpf, phones: {}, address: {}, economy: {}, etc }
         """
+        from habitacao.models import Municipality
+
         # Extrai dados aninhados
         phones = data.pop('phones', {})
         address = data.pop('address', {})
@@ -23,6 +111,48 @@ class BeneficiaryService:
         economy = data.pop('economy', {})
         family = data.pop('family', {})
         housing = data.pop('housing', {})
+
+        # --- Lógica de busca do Município ---
+        from unidecode import unidecode
+        municipality = None
+        city_name = address.get('city')
+        uf_code = address.get('uf')
+
+        if city_name and uf_code:
+            # Normaliza o nome da cidade vindo da requisição
+            city_name_normalized = unidecode(city_name.strip().lower())
+
+            # 1. Tentativa de busca exata normalizada (mais segura)
+            municipalities_in_uf = Municipality.objects.filter(uf__iexact=uf_code)
+            found_municipality = None
+            for m in municipalities_in_uf:
+                if unidecode(m.name.lower()) == city_name_normalized:
+                    found_municipality = m
+                    break
+            
+            municipality = found_municipality
+
+            # 2. Se não encontrou, tenta busca com 'icontains' (mais flexível)
+            if not municipality:
+                municipalities = Municipality.objects.filter(
+                    name__icontains=city_name.strip(),
+                    uf__iexact=uf_code
+                )
+                # Só aceita se o resultado for único para evitar ambiguidade
+                if municipalities.count() == 1:
+                    municipality = municipalities.first()
+
+            # Se ainda não encontrou, lança o erro
+            if not municipality:
+                raise ValueError(f"Município '{city_name}/{uf_code}' não encontrado ou a busca resultou em ambiguidade.")
+
+        # --- Mapeamento da Situação Habitacional ---
+        housing_situation = housing.get('current_housing_situation')
+        pays_rent = housing_situation == 'ALUGUEL'
+        cohabitation = housing_situation == 'COABITACAO'
+        improvised_dwelling = housing_situation == 'IMPROVISADA'
+        precarious_own_house = housing.get('housing_precariousness') == 'PRECARIA'
+        no_own_house = not housing.get('has_own_property', True)
 
         # Cria beneficiário
         beneficiary = Beneficiary.objects.create(
@@ -32,45 +162,45 @@ class BeneficiaryService:
             rg=data.get('rg', ''),
             birth_date=data.get('birth_date'),
             marital_status=data.get('marital_status', ''),
+
             # Contatos
             email=data.get('email', ''),
             phone_primary=phones.get('primary', ''),
             phone_secondary=phones.get('secondary', ''),
+
             # Endereço
-            address_line=address.get('line', ''),
+            address_line=address.get('street', ''),
             address_number=address.get('number', ''),
             address_complement=address.get('complement', ''),
             neighborhood=address.get('neighborhood', ''),
-            municipality_id=address.get('municipality_id'),
-            cep=address.get('cep', ''),
+            municipality=municipality,
+            cep=address.get('zip_code', ''),
             uf=address.get('uf', ''),
+
             # Cônjuge
-            spouse_name=spouse.get('name', '') if spouse else '',
-            spouse_rg=spouse.get('rg', '') if spouse else '',
+            spouse_name=spouse.get('full_name', '') if spouse else '',
             spouse_birth_date=spouse.get('birth_date') if spouse else None,
+
             # Econômico
-            main_occupation=economy.get('main_occupation', ''),
-            gross_family_income=economy.get('gross_family_income'),
-            has_cadunico=economy.get('has_cadunico', False),
-            nis_number=economy.get('nis_number', ''),
+            main_occupation=economy.get('main_income_source', ''),
+            gross_family_income=family.get('total_family_income'),
+            nis_number=economy.get('nis_number') or None,
+            has_cadunico=bool(economy.get('nis_number')),
+
             # Família
-            family_size=family.get('family_size', 1),
-            has_elderly=family.get('has_elderly', False),
-            elderly_count=family.get('elderly_count', 0),
-            has_children=family.get('has_children', False),
-            children_count=family.get('children_count', 0),
-            has_disability_or_tea=family.get('has_disability_or_tea', False),
-            disability_or_tea_count=family.get('disability_or_tea_count', 0),
-            household_head_gender=family.get('household_head_gender', ''),
-            family_in_cadunico_updated=family.get('cadunico_updated', False),
-            # Habitação
-            no_own_house=housing.get('no_own_house', False),
-            precarious_own_house=housing.get('precarious_own_house', False),
-            cohabitation=housing.get('cohabitation', False),
-            improvised_dwelling=housing.get('improvised_dwelling', False),
-            pays_rent=housing.get('pays_rent', False),
-            rent_value=housing.get('rent_value'),
-            other_housing_desc=housing.get('other_housing_desc', ''),
+            family_size=family.get('number_of_members', 1),
+            has_elderly=family.get('has_elderly_person', False),
+            children_count=family.get('number_of_minors', 0),
+            has_children=family.get('number_of_minors', 0) > 0,
+            has_disability_or_tea=family.get('has_disabled_person', False),
+
+            # Situação Habitacional
+            pays_rent=pays_rent,
+            cohabitation=cohabitation,
+            improvised_dwelling=improvised_dwelling,
+            precarious_own_house=precarious_own_house,
+            no_own_house=no_own_house,
+
             # Outros
             notes=data.get('notes', ''),
             status=ApplicationStatus.DRAFT,

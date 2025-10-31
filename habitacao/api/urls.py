@@ -7,7 +7,7 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
 
-from .views import auth, beneficiary, base, document, dashboard, public as public_views
+from .views import auth, beneficiary, base, document, dashboard, public as public_views, user  # importa o novo viewset
 
 # Schema para Swagger/OpenAPI
 schema_view = get_schema_view(
@@ -53,6 +53,7 @@ router.register(r'priority-criteria', base.PriorityCriteriaViewSet, basename='pr
 router.register(r'social-benefits', base.SocialBenefitTypeViewSet, basename='social-benefit')
 router.register(r'document-types', base.DocumentTypeViewSet, basename='document-type')
 router.register(r'documents', document.BeneficiaryDocumentViewSet, basename='document')
+router.register(r'users', user.UserViewSet, basename='user')
 
 urlpatterns = [
     # ============================================================
@@ -81,6 +82,8 @@ urlpatterns = [
     # PUBLIC (NO AUTH)
     # ============================================================
     path('public/status', public_views.public_status, name='public-status'),
+    path('public/beneficiaries', public_views.public_create_beneficiary, name='public-create-beneficiary'),
+    path('public/documents', public_views.public_upload_document, name='public-upload-document'),
 
     # ============================================================
     # VIEWSETS (Router)

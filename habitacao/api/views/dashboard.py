@@ -46,7 +46,7 @@ def municipality_statistics(request):
     responses={200: 'Atribuições do usuário'}
 )
 @api_view(['GET'])
-@permission_classes=[IsAuthenticated]
+@permission_classes([IsAuthenticated])
 def user_assignments(request):
     """
     GET /api/v1/dashboard/my-assignments

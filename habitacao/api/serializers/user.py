@@ -28,12 +28,13 @@ class UserSerializer(serializers.ModelSerializer):
     """Serializer para usuário Django"""
     profile = UserProfileSerializer(read_only=True)
     full_name = serializers.CharField(source='get_full_name', read_only=True)
+    is_superuser = serializers.BooleanField(read_only=True)  # <-- Adiciona campo
 
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'first_name',
-            'last_name', 'full_name', 'profile'
+            'last_name', 'full_name', 'profile', 'is_superuser'  # <-- Inclui campo
         ]
         read_only_fields = ['id', 'username']
 

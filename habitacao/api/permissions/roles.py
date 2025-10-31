@@ -29,11 +29,18 @@ class IsCoordinator(permissions.BasePermission):
 class IsAnalyst(permissions.BasePermission):
     """Analistas ou superiores"""
     def has_permission(self, request, view):
-        if not (request.user and request.user.is_authenticated and hasattr(request.user, 'profile')):
+        if not (request.user and request.user.is_authenticated):
+            print(f"❌ IsAnalyst: User not authenticated")
+            return False
+
+        if not hasattr(request.user, 'profile'):
+            print(f"❌ IsAnalyst: User {request.user.email} has no profile")
             return False
 
         allowed_roles = [UserRole.ADMIN, UserRole.COORDINATOR, UserRole.ANALYST]
-        return request.user.profile.role in allowed_roles
+        has_permission = request.user.profile.role in allowed_roles
+        print(f"🔒 IsAnalyst check: user={request.user.email}, role={request.user.profile.role}, allowed={has_permission}")
+        return has_permission
 
 
 class IsClerkOrHigher(permissions.BasePermission):

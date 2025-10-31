@@ -54,6 +54,10 @@ def login(request):
             email=serializer.validated_data['email'],
             password=serializer.validated_data['password']
         )
+        # Garante que o campo is_superuser está presente no user
+        from django.contrib.auth.models import User
+        user = User.objects.get(email=serializer.validated_data['email'])
+        auth_data['user']['is_superuser'] = user.is_superuser
         return success_response(auth_data)
     except ValueError as e:
         return error_response(
