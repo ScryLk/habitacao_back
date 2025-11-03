@@ -635,3 +635,9 @@ class SearchAudit(models.Model):
     def __str__(self):
         user_name = self.user.get_full_name() if self.user else 'Anônimo'
         return f"{user_name} - {self.query[:50]}"
+
+
+# ============================================================
+# IMPORT AUDIT MODELS
+# ============================================================
+from .models_audit import AuditLog, UserSession, PermissionChange, SystemNotification

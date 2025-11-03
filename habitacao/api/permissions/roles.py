@@ -6,11 +6,17 @@ from habitacao.choices import UserRole
 
 
 class IsAdmin(permissions.BasePermission):
-    """Apenas administradores"""
+    """Apenas administradores (role ADMIN ou is_superuser)"""
     def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+
+        # Superusuários sempre têm acesso
+        if request.user.is_superuser:
+            return True
+
+        # Verificar role ADMIN
         return (
-            request.user and
-            request.user.is_authenticated and
             hasattr(request.user, 'profile') and
             request.user.profile.role == UserRole.ADMIN
         )
