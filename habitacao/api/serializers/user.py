@@ -48,8 +48,8 @@ class RegisterSerializer(serializers.Serializer):
         required=True,
         validators=[validate_password]
     )
-    cpf = serializers.CharField(max_length=14, required=True)
-    role = serializers.ChoiceField(choices=UserRole.choices, required=True)
+    cpf = serializers.CharField(max_length=14, required=False, allow_blank=True, default='')
+    role = serializers.ChoiceField(choices=UserRole.choices, required=False, default='OPERATOR')
     municipality_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate_email(self, value):
@@ -60,19 +60,28 @@ class RegisterSerializer(serializers.Serializer):
 
     def validate_cpf(self, value):
         """Valida se o CPF já existe"""
-        if UserProfile.objects.filter(cpf=value).exists():
+        # Permitir CPF vazio (pre-cadastro)
+        if value and UserProfile.objects.filter(cpf=value).exists():
             raise serializers.ValidationError("Este CPF já está cadastrado.")
         return value
 
     def create(self, validated_data):
         """Cria usuário e perfil"""
+        import uuid
+
         # Separa dados
         full_name = validated_data.pop('full_name')
         email = validated_data.pop('email')
         password = validated_data.pop('password')
-        cpf = validated_data.pop('cpf')
-        role = validated_data.pop('role')
+        cpf = validated_data.pop('cpf', '')
+        role = validated_data.pop('role', 'OPERATOR')
         municipality_id = validated_data.pop('municipality_id', None)
+
+        # Se CPF vazio, gerar um temporario usando parte do UUID
+        if not cpf:
+            # Gerar CPF temporario unico (formato: TEMP-XXXXX)
+            temp_id = str(uuid.uuid4())[:8].upper()
+            cpf = f'TEMP-{temp_id}'
 
         # Divide nome
         name_parts = full_name.split(' ', 1)
